@@ -3,78 +3,87 @@
 use mitex_lexer::{BraceKind, CommandName, Token};
 use rowan::ast::AstNode;
 
-macro_rules! enum_all {
+macro_rules! from_repr {
 	(
+        #[repr($enum_repr:ty)]
 		$(#[$meta:meta])*
 		$vis:vis enum $name:ident {
 			$($(#[$variant_meta:meta])* $variant:ident,)*
 		}
 	) => {
 		$(#[$meta])*
+        #[repr($enum_repr)]
 		$vis enum $name {
 			$($(#[$variant_meta])* $variant,)*
 		}
 
-		impl $name {
-			const ALL: &'static [Self] = &[$(Self::$variant,)*];
+		impl TryFrom<$enum_repr> for $name {
+            type Error = ();
+
+            /// Get the variant from a raw repr value
+             fn try_from(kind: $enum_repr) -> Result<Self, ()> {
+                const ALL: &'static [$name] = &[$($name::$variant,)*];
+
+                ALL.get(usize::from(kind)).copied().ok_or(())
+            }
 		}
 	};
 }
 
-enum_all! {
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash, PartialOrd, Ord)]
-#[allow(missing_docs)]
-#[repr(u16)]
-pub enum SyntaxKind {
-    // Tokens
-    TokenError,
-    TokenLineBreak,
-    TokenWhiteSpace,
-    TokenComment,
-    TokenLBrace,
-    TokenRBrace,
-    TokenLBracket,
-    TokenRBracket,
-    TokenLParen,
-    TokenRParen,
-    TokenComma,
-    TokenTilde,
-    TokenSlash,
-    TokenWord,
-    TokenDollar,
-    TokenAmpersand,
-    TokenHash,
-    TokenUnderscore,
-    TokenCaret,
-    TokenApostrophe,
-    TokenDitto,
-    TokenSemicolon,
-    TokenCommandSym,
+from_repr! {
+    #[repr(u16)]
+    #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash, PartialOrd, Ord)]
+    #[allow(missing_docs)]
+    pub enum SyntaxKind {
+        // Tokens
+        TokenError,
+        TokenLineBreak,
+        TokenWhiteSpace,
+        TokenComment,
+        TokenLBrace,
+        TokenRBrace,
+        TokenLBracket,
+        TokenRBracket,
+        TokenLParen,
+        TokenRParen,
+        TokenComma,
+        TokenTilde,
+        TokenSlash,
+        TokenWord,
+        TokenDollar,
+        TokenAmpersand,
+        TokenHash,
+        TokenUnderscore,
+        TokenCaret,
+        TokenApostrophe,
+        TokenDitto,
+        TokenSemicolon,
+        TokenCommandSym,
 
-    // Clauses
-    ClauseCommandName,
-    ClauseArgument,
-    ClauseLR,
+        // Clauses
+        ClauseCommandName,
+        ClauseArgument,
+        ClauseLR,
 
-    // Items
-    ItemNewLine,
-    ItemText,
-    ItemCurly,
-    ItemBracket,
-    ItemParen,
-    ItemCmd,
-    ItemEnv,
-    ItemLR,
-    ItemBegin,
-    ItemEnd,
-    ItemBlockComment,
-    ItemTypstCode,
-    ItemAttachComponent,
-    ItemFormula,
+        // Items
+        ItemNewLine,
+        ItemText,
+        ItemCurly,
+        ItemBracket,
+        ItemParen,
+        ItemCmd,
+        ItemEnv,
+        ItemLR,
+        ItemBegin,
+        ItemEnd,
+        ItemBlockComment,
+        ItemTypstCode,
+        ItemAttachComponent,
+        ItemFormula,
 
-    // Scopes
-    ScopeRoot,
-}
+        // Scopes
+        ScopeRoot,
+    }
 }
 
 impl From<Token> for SyntaxKind {
@@ -138,7 +147,7 @@ impl From<SyntaxKind> for rowan::SyntaxKind {
 
 impl From<rowan::SyntaxKind> for SyntaxKind {
     fn from(kind: rowan::SyntaxKind) -> Self {
-        Self::ALL[usize::from(kind.0)]
+        Self::try_from(kind.0).unwrap()
     }
 }
 
@@ -396,5 +405,18 @@ impl EndItem {
         self.syntax()
             .first_token()
             .filter(|node| node.kind() == TokenCommandSym)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::syntax::SyntaxKind;
+
+    #[test]
+    fn test_syntax_repr() {
+        use SyntaxKind::*;
+        assert_eq!(SyntaxKind::try_from(TokenError as u16), Ok(TokenError));
+        assert_eq!(SyntaxKind::try_from(ScopeRoot as u16), Ok(ScopeRoot));
+        assert_eq!(SyntaxKind::try_from((ScopeRoot as u16) + 1), Err(()));
     }
 }
